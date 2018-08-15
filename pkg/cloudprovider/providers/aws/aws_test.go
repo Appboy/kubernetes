@@ -1145,6 +1145,89 @@ func TestGetLoadBalancerAdditionalTags(t *testing.T) {
 	}
 }
 
+func TestGetLoadBalancerTargetFilters(t *testing.T) {
+	filterTests := []struct {
+		Annotations map[string]string
+		Filters     []*ec2.Filter
+	}{
+		{
+			Annotations: map[string]string{
+				ServiceAnnotationLoadBalancerTargetFilters: "Name=Key1,Values=Val1,Val2",
+			},
+			Filters: []*ec2.Filter{
+				newEc2Filter("Key1", "Val1", "Val2"),
+			},
+		},
+		{
+			Annotations: map[string]string{
+				ServiceAnnotationLoadBalancerTargetFilters: "Name=Key1,Values=Val1,Val2,Name=Key2,Values=Val3,Val4",
+			},
+			Filters: []*ec2.Filter{
+				newEc2Filter("Key1", "Val1", "Val2"),
+				newEc2Filter("Key2", "Val3", "Val4"),
+			},
+		},
+		{
+			Annotations: map[string]string{
+				ServiceAnnotationLoadBalancerTargetFilters: "Name=Key1,Name=Key2,Values=Val1,Val2",
+				"anotherKey":                               "anotherValue",
+			},
+			Filters: []*ec2.Filter{
+				newEc2Filter("Key1", ""),
+				newEc2Filter("Key2", "Val1", "Val2"),
+			},
+		},
+		{
+			Annotations: map[string]string{
+				ServiceAnnotationLoadBalancerTargetFilters: "Name=Key1,Values=Val1,Val2, Name=Key2,Values=Val3,Val4",
+			},
+			Filters: []*ec2.Filter{
+				newEc2Filter("Key1", "Val1", "Val2"),
+				newEc2Filter("Key2", "Val3", "Val4"),
+			},
+		},
+		{
+			Annotations: map[string]string{
+				"anotherKey": "Name=Key1,Values=Val1,Val2,Name=Key2,Values=Val1,Val2",
+			},
+			Filters: []*ec2.Filter{},
+		},
+		{
+			Annotations: map[string]string{
+				ServiceAnnotationLoadBalancerTargetFilters: "Name=Key1,Values=Val1,Val2,Name=Key2,Val1,Val2, Name=,Values=234,",
+			},
+			Filters: []*ec2.Filter{
+				newEc2Filter("Key1", "Val1", "Val2"),
+				newEc2Filter("Key2,Val1,Val2", ""),
+			},
+		},
+	}
+
+	for _, filterTest := range filterTests {
+		filters := getLoadBalancerTargetFilters(filterTest.Annotations)
+		for i, filter := range filters {
+			if len(filters) != len(filterTest.Filters) {
+				t.Errorf("incorrect expected length: %v != %v", filters, filterTest.Filters)
+			}
+			if *filterTest.Filters[i].Name != *filter.Name {
+				t.Errorf("%s != %s", *filterTest.Filters[i].Name, *filter.Name)
+				continue
+			}
+			if len(filterTest.Filters[i].Values) != len(filter.Values) {
+				t.Errorf("%v != %v", filterTest.Filters[i].Values, filter.Values)
+				continue
+			} else {
+				for ii, val := range filter.Values {
+					if *val != *filterTest.Filters[i].Values[ii] {
+						t.Errorf("incorrect expected filter value: %s != %s", *val, *filterTest.Filters[i].Values[ii])
+						continue
+					}
+				}
+			}
+		}
+	}
+}
+
 func TestLBExtraSecurityGroupsAnnotation(t *testing.T) {
 	awsServices := newMockedFakeAWSServices(TestClusterId)
 	c, _ := newAWSCloud(CloudConfig{}, awsServices)

@@ -21,13 +21,14 @@ import (
 	"net/url"
 	"strings"
 
+	"regexp"
+	"sync"
+	"time"
+
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/golang/glog"
 	"k8s.io/api/core/v1"
-	"regexp"
-	"sync"
-	"time"
 )
 
 // awsInstanceRegMatch represents Regex Match for AWS instance.
@@ -152,12 +153,11 @@ type instanceCache struct {
 }
 
 // Gets the full information about these instance from the EC2 API
-func (c *instanceCache) describeAllInstancesUncached() (*allInstancesSnapshot, error) {
+func (c *instanceCache) describeAllInstancesUncached(filters []*ec2.Filter) (*allInstancesSnapshot, error) {
 	now := time.Now()
 
 	glog.V(4).Infof("EC2 DescribeInstances - fetching all instances")
 
-	filters := []*ec2.Filter{}
 	instances, err := c.cloud.describeInstances(filters)
 	if err != nil {
 		return nil, err
@@ -196,7 +196,7 @@ type cacheCriteria struct {
 }
 
 // describeAllInstancesCached returns all instances, using cached results if applicable
-func (c *instanceCache) describeAllInstancesCached(criteria cacheCriteria) (*allInstancesSnapshot, error) {
+func (c *instanceCache) describeAllInstancesCached(criteria cacheCriteria, filters []*ec2.Filter) (*allInstancesSnapshot, error) {
 	var err error
 	snapshot := c.getSnapshot()
 	if snapshot != nil && !snapshot.MeetsCriteria(criteria) {
@@ -204,7 +204,7 @@ func (c *instanceCache) describeAllInstancesCached(criteria cacheCriteria) (*all
 	}
 
 	if snapshot == nil {
-		snapshot, err = c.describeAllInstancesUncached()
+		snapshot, err = c.describeAllInstancesUncached(filters)
 		if err != nil {
 			return nil, err
 		}

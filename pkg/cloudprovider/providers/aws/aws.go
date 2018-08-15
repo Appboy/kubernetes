@@ -175,6 +175,16 @@ const ServiceAnnotationLoadBalancerBEProtocol = "service.beta.kubernetes.io/aws-
 // For example: "Key1=Val1,Key2=Val2,KeyNoVal1=,KeyNoVal2"
 const ServiceAnnotationLoadBalancerAdditionalTags = "service.beta.kubernetes.io/aws-load-balancer-additional-resource-tags"
 
+// ServiceAnnotationLoadBalancerTargetFilters is the annotation used on the service
+// to specify optional filters for identifying instances to be registered with and
+// targetted by the ELB. In keeping with the format described here,
+// https://docs.aws.amazon.com/cli/latest/reference/ec2/describe-instances.html#options,
+// each comma separated filter has a "Name" and a "Values" key. The Name key
+// specifies the name of the filter to use and the Values key specifies a list of
+// comma separated values for that filter.
+// For example: "Name=Filter1,Values=Value1,Value2,Name=Filter2,Values=Value3,Value4"
+const ServiceAnnotationLoadBalancerTargetFilters = "service.beta.kubernetes.io/aws-load-balance-target-filters"
+
 // ServiceAnnotationLoadBalancerHCHealthyThreshold is the annotation used on
 // the service to specify the number of successive successful health checks
 // required for a backend to be considered healthy for traffic.
@@ -3297,7 +3307,9 @@ func (c *Cloud) EnsureLoadBalancer(ctx context.Context, clusterName string, apiS
 		return nil, fmt.Errorf("LoadBalancerIP cannot be specified for AWS ELB")
 	}
 
-	instances, err := c.findInstancesForELB(nodes)
+	targetFilters := getLoadBalancerTargetFilters(annotations)
+
+	instances, err := c.findInstancesForELB(nodes, targetFilters)
 	if err != nil {
 		return nil, err
 	}
@@ -4132,7 +4144,8 @@ func (c *Cloud) EnsureLoadBalancerDeleted(ctx context.Context, clusterName strin
 
 // UpdateLoadBalancer implements LoadBalancer.UpdateLoadBalancer
 func (c *Cloud) UpdateLoadBalancer(ctx context.Context, clusterName string, service *v1.Service, nodes []*v1.Node) error {
-	instances, err := c.findInstancesForELB(nodes)
+	targetFilters := getLoadBalancerTargetFilters(service.Annotations)
+	instances, err := c.findInstancesForELB(nodes, targetFilters)
 	if err != nil {
 		return err
 	}

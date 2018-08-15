@@ -94,6 +94,41 @@ func getLoadBalancerAdditionalTags(annotations map[string]string) map[string]str
 	return additionalTags
 }
 
+func getLoadBalancerTargetFilters(annotations map[string]string) []*ec2.Filter {
+	targetFilters := []*ec2.Filter{}
+	if targetFiltersList, ok := annotations[ServiceAnnotationLoadBalancerTargetFilters]; ok {
+		targetFiltersList = strings.TrimSpace(targetFiltersList)
+
+		// Break up "Name=Key1,Values=Val1,Val2,Name=Key2,Values=Val3,Val4,..."
+		filtersList := strings.Split(targetFiltersList, "Name=")
+
+		// Break up "Key,Values=Val1,Val2"
+		for _, filterSet := range filtersList {
+			// There could be a trailing "," sparating this filter and the next
+			filterSet = strings.TrimRight(filterSet, ", ")
+
+			filterNameValues := strings.Split(filterSet, ",Values=")
+
+			//  Accept "Name=key,Values=val,val" or "Name=key,Values=" or just "Name=Key"
+			if len(filterNameValues) >= 2 && len(filterNameValues[0]) != 0 {
+
+				// If there is both a "Name" and a "Values" then parse "Values", generate a
+				// ec2.Filter, and add it to targetFilters
+				values := strings.Split(filterNameValues[1], ",")
+				filter := newEc2Filter(filterNameValues[0], values...)
+				targetFilters = append(targetFilters, filter)
+			} else if len(filterNameValues) == 1 && len(filterNameValues[0]) != 0 {
+				// If there is just a "Name" then generate an ec2.Filter with just the "Name"
+				// and a "Values" list containing a single empty string and add it to targetFilters
+
+				filter := newEc2Filter(filterNameValues[0], "")
+				targetFilters = append(targetFilters, filter)
+			}
+		}
+	}
+	return targetFilters
+}
+
 // ensureLoadBalancerv2 ensures a v2 load balancer is created
 func (c *Cloud) ensureLoadBalancerv2(namespacedName types.NamespacedName, loadBalancerName string, mappings []nlbPortMapping, instanceIDs, subnetIDs []string, internalELB bool, annotations map[string]string) (*elbv2.LoadBalancer, error) {
 	loadBalancer, err := c.describeLoadBalancerv2(loadBalancerName)
@@ -1476,7 +1511,7 @@ func proxyProtocolEnabled(backend *elb.BackendServerDescription) bool {
 // findInstancesForELB gets the EC2 instances corresponding to the Nodes, for setting up an ELB
 // We ignore Nodes (with a log message) where the instanceid cannot be determined from the provider,
 // and we ignore instances which are not found
-func (c *Cloud) findInstancesForELB(nodes []*v1.Node) (map[awsInstanceID]*ec2.Instance, error) {
+func (c *Cloud) findInstancesForELB(nodes []*v1.Node, filters []*ec2.Filter) (map[awsInstanceID]*ec2.Instance, error) {
 	// Map to instance ids ignoring Nodes where we cannot find the id (but logging)
 	instanceIDs := mapToAWSInstanceIDsTolerant(nodes)
 
@@ -1484,7 +1519,7 @@ func (c *Cloud) findInstancesForELB(nodes []*v1.Node) (map[awsInstanceID]*ec2.In
 		// MaxAge not required, because we only care about security groups, which should not change
 		HasInstances: instanceIDs, // Refresh if any of the instance ids are missing
 	}
-	snapshot, err := c.instanceCache.describeAllInstancesCached(cacheCriteria)
+	snapshot, err := c.instanceCache.describeAllInstancesCached(cacheCriteria, filters)
 	if err != nil {
 		return nil, err
 	}
