@@ -1519,9 +1519,19 @@ func (c *Cloud) findInstancesForELB(nodes []*v1.Node, filters []*ec2.Filter) (ma
 		// MaxAge not required, because we only care about security groups, which should not change
 		HasInstances: instanceIDs, // Refresh if any of the instance ids are missing
 	}
-	snapshot, err := c.instanceCache.describeAllInstancesCached(cacheCriteria, filters)
-	if err != nil {
-		return nil, err
+	var snapshot *allInstancesSnapshot
+
+	// if we have filters lets just pull the uncached
+	if len(filters) != 0 {
+		snapshot, err := c.instanceCache.describeAllInstancesUncached(filters)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		snapshot, err := c.instanceCache.describeAllInstancesCached(cacheCriteria)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	instances := snapshot.FindInstances(instanceIDs)

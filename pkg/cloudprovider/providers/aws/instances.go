@@ -196,13 +196,13 @@ type cacheCriteria struct {
 }
 
 // describeAllInstancesCached returns all instances, using cached results if applicable
-func (c *instanceCache) describeAllInstancesCached(criteria cacheCriteria, filters []*ec2.Filter) (*allInstancesSnapshot, error) {
+func (c *instanceCache) describeAllInstancesCached(criteria cacheCriteria) (*allInstancesSnapshot, error) {
 	var err error
 	snapshot := c.getSnapshot()
 	if snapshot != nil && !snapshot.MeetsCriteria(criteria) {
 		snapshot = nil
 	}
-
+	filters := []*ec2.Filter{}
 	if snapshot == nil {
 		snapshot, err = c.describeAllInstancesUncached(filters)
 		if err != nil {
